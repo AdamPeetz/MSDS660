@@ -1,0 +1,291 @@
+---
+title: "Assignment_Week1"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+---
+
+Adam Peetz<br>
+MSDS660 Week 1 Assignment<br>
+Regis University <br>
+Dr. Siripun Sanguansintukul<br>
+October 23rd 2022<br>
+
+# Exploratory Data Analysis of Marketing Data
+
+Targeted marketing can increase a company's sales, bridging the gap between items on sale and a customer's current needs. To effectively target marketing, a company must understand its customer's purchasing behavior. One way to gain this understanding is to conduct a statistical analysis of a company's sales data. This type of exploratory data analysis can illustrate connections between customer demographics and potential future sales. <br>
+
+A marketing data set provided by Hult International Business School will be used to demonstrate exploratory data analysis of sales and demographic information in the cells below. <br>
+
+First set the working directory, load the required libraries, and import the data set.
+
+## Set Working Directory
+```{r}
+#set working directory
+setwd("C:\\Users\\adamg\\Documents\\MSDS_660\\Week_1")
+```
+## Load Libraries
+```{r, warning=FALSE,message=FALSE,error=FALSE}
+library (tidyverse)
+library(data.table)
+library(dplyr)
+library(ggplot2)
+#install.packages("hexbin")
+library(hexbin)
+```
+## Load Data
+```{r, warning=FALSE,message=FALSE,error=FALSE}
+df<-read_csv("marketing.csv")
+
+```
+## Convert to data.table
+```{r}
+#convert to data.table
+setDT(df)
+```
+## Explore the raw data with str().
+
+Checking the data frame with str() reveals some basic information about the data it contains. Useful info provided by this function includes the variable names, column contents, and types for each of the 19 variables in the data set.
+```{r}
+#Check what you have with str
+str(df)
+```
+## Summary() for descriptive statistics.
+
+The summary() function returns descriptive statistics for all of the numeric fields in the data set. This function is useful for understanding the distribution of each feature at a high level. Some insights this summary reveals are: <br>
+- MtnWines has the highest mean spend amount<br>
+- Kidhome has a max of 2, and mean of 0.4222. Family size is small.<br>
+- Income is being treated as a character class, not a numeric, and will need to be cleaned.<br>
+
+```{r}
+#show statistical summary of features
+summary(df)
+```
+## More descriptive outputs with head().
+
+The head function() displays the top rows of the data set. It is useful for visualizing the raw data.
+
+```{r}
+#display file header into
+head(df,6)
+```
+
+## Find how many countries are represented in the data.
+
+The dataset contains 8 countries: AUS, CA, GER, IND, ME, SA, SP, US.
+
+```{r}
+#unique count of specific feature
+length(unique(df$Country))
+```
+
+## Can you sort by the name of the country?
+
+The order() function can be used to reorder the rows in a data frame. This function changes the row order in place; future charts will be ordered alphabetically by country name unless otherwise specified.
+
+```{r}
+df[order(df[,'Country']), ]
+```
+
+## Find mean and sd of in-store purchases in the US.
+
+The mean and standard deviation for all countries can be found by grouping the data set by country and setting up an aggregation summary for mean and standard deviation. The mean of in store purchases for the US is 6.03, the standard deviation is 3.36. The statistics for all 8 countries are shown in the table below.
+
+
+```{r}
+analysis_df_1 <- df %>% 
+  group_by(Country) %>% 
+  summarize(mean = mean(NumStorePurchases),
+            sd = sd(NumStorePurchases))
+
+analysis_df_1
+```
+## Data Cleaning
+
+The income feature should be numeric but is treated as a character column due to the use of dollar signs. The dollar signs must be removed so that the column is treated as a numeric value. This column also contains several rows with NA. Rows containing NA will be dropped from the data set to clean up the values in this variable.
+
+```{r}
+#remove NA from column
+df<- df[-which(is.na(df$Income)), ]
+
+#remove $ signs
+df$Income <- parse_number(df$Income)
+```
+## Set scientific notation for plotting.
+
+Set scipen to a higher value, to prevent numbers being displayed in scientific notation on future plots.
+
+```{r}
+options(scipen=999)
+```
+## Histogram of Income 
+
+Customer income is included in the demographic information provided by the data set. Plotting the distribution of customer income shows that most of the customers make less than 100,000 dollars with a somewhat standard looking distribution forming between 0 and 100,000. There are a few outliers in the data set with high incomes above this mark. One lucky customer makes 666,666 dollars, or may have lied about their income on the demographic’s questionnaire.
+
+
+```{r }
+hist(df$Income,
+main="Distribution of Income",
+xlab="Income",
+ylab="Customers",
+col="blue",
+breaks=100
+)
+```
+
+## Boxplot of Amount of Sweet Products
+
+Box and whisker plots visualize the distribution of a single feature. They are often used for outlier detection. A boxplot has been created for the amount spent on sweet products in the code below. This boxplot shows that the average customer spends very little on sweet products. The distribution for this variable is skewed to the right towards fewer purchases on sweets. Despite this trend, there are a few outlying customers who spend lots of money on sweets when compared to the average customer in the data set.
+
+
+```{r}
+#boxplot of percent in plastic waste
+ggplot(df, aes(x=MntSweetProducts))+
+  geom_boxplot()+
+  ggtitle("Boxplot for Amount Spent on Sweet Products") +
+  labs(y= "", x = "Amount Spent")+
+  theme_bw() + 
+  theme(panel.border = element_blank(), 
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(), 
+        axis.line = element_line(colour = "black"),
+        legend.position="none")
+```
+
+## Which country is has the highest amount of wine consumed? 
+
+The country with the highest amount of wine consumed in the data set is Spain, with a total spend amount over 300,000 dollars. The wine consumed by all 8 countries is visualized by the code below.
+
+
+```{r}
+#create grouped analysis dataframe for sum/total
+analysis_df_2 <- df %>% 
+  group_by(Country) %>% 
+  summarize(total = sum(MntWines))
+
+#draw vertical histogram
+ggplot(analysis_df_2, aes(x=fct_reorder(Country,total), y=total,fill=total))+
+  geom_bar(stat='identity')+
+  coord_flip() + 
+  ggtitle("Which country has the highest amount of wine consumed?") +
+  labs(y= "Amount Spent on Wine", x = "Country")+
+  theme_bw() + 
+  theme(panel.border = element_blank(), 
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(), 
+        axis.line = element_line(colour = "black"),
+        legend.position="none")
+
+
+```
+
+## Feature Engineering
+
+Two new features will be created for the data set. Total amount spent between all purchase categories and total sales count from all distribution types. These two features will be combined with demographic information later in the code to evaluate who are the best customers in the data set.
+
+
+```{r}
+#create totalpsum variable
+df$totalpsum <- df$NumStorePurchases +
+                df$NumWebPurchases + 
+                df$NumCatalogPurchases
+
+#test variable creation
+summary(df$totalpsum)
+```
+```{r}
+#create totalpmnt variable
+df$totalpmnt<- df$MntWines + 
+               df$MntFruits + 
+               df$MntFishProducts +
+               df$MntSweetProducts +
+               df$MntGoldProds  +
+               df$MntMeatProducts
+
+#test variable creation
+summary(df$totalpmnt)
+```
+
+## Take a look at the education variable and see what it looks like.
+
+Education is included as a demographic variable in the data set. About half of the company's customers are at "graduation" level, followed by PhD. A bar plot and table are generated for this variable below.
+
+```{r}
+#create grouped analysis dataframe with count
+analysis_df_3 <- df %>% 
+  group_by(Education) %>% 
+  summarize(Count = n())
+
+print(analysis_df_3)
+```
+```{r}
+#draw vertical barplot
+ggplot(analysis_df_3, aes(x=fct_reorder(Education, Count), y=Count,fill=Count))+
+  geom_bar(stat='identity')+
+  coord_flip() + 
+  ggtitle("What does education look like in the dataset?") +
+  labs(y= "Count", x = "Education")+
+  theme_bw() + 
+  theme(panel.border = element_blank(), 
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(), 
+        axis.line = element_line(colour = "black"),
+        legend.position="none")
+
+```
+
+## Hued Facet Scatterplots with Trendlines
+
+Hued, faceted, scatter plots with trend lines are a powerful tool for visualizing the relationship and effect of many variables in parallel. An example of this type of plot is shown for total payment amount, total sale count, education, and response to promotion offer below. Some patterns that pop out are: <br>
+- There are very few sales made to the basic education facet, most of these sales are low payment amount and low sale count. <br>
+- Customers with high total payment amount and high total sale count are more likely to respond to a promotion offer. <br>
+- There is a bump in the trend line for total sale count and total payment amount. Customers with the highest sale count spend less per sale.
+```{r, warning=FALSE,message=FALSE,error=FALSE}
+p <- ggplot(df, aes(x = totalpsum, y = totalpmnt)) 
+p +  geom_point(alpha = (2/3), size = 2,aes(color = Response)) + 
+     geom_smooth() +
+     ggtitle("Education Facets: Count of Sales vs Total Spent: Colored by Promotion Response") +
+     labs(y= "Total Payment Amount", x = "Total Sale Count")+
+     facet_wrap(~ Education)
+```
+
+## Create hexplot to show density of correlating features.
+
+Hexplots show the density of distribution between two variables. A hexplot has been generated for total purchase count and total purchase amount in the cell below. This hexplot shows that most customers have made about 5 purchases for low dollar amounts. As the number of purchases goes up, the payment amount starts to spread out. This result is not surprising as additional purchases should increase both the amount spent and the variation in that amount as additional purchases are made.
+
+```{r}
+#create grouped analysis dataframe
+p <- ggplot(df, aes(x = totalpsum, y = totalpmnt)) 
+p +  geom_hex() +
+     ggtitle("Density Plot: Count of Sales vs Total Spent") +
+     labs(y= "Total Payment Amount", x = "Total Sale Count")+  
+     theme_bw() + 
+     theme(panel.border = element_blank(), 
+           panel.grid.major = element_blank(),
+           panel.grid.minor = element_blank(), 
+           axis.line = element_line(colour = "black"))
+  
+```
+
+## Export dataset to CSV
+
+The data set can be saved to a csv file for future use with the write_csv() function.
+
+```{r}
+#write_csv export data out
+write_csv(df, "cleaned_marketing_data.csv")
+```
+
+# Conclusion
+
+Exploratory analysis of the marketing data set revealed some insights on customer types and purchases. This company's customers are usually well educated, with "graduation" level customers making up most of the customers in the data set. The company’s best customers (in terms of total sales count and amount) are also those who respond to promotions, with many high spenders having responded to a promotion in the data set. The company may want to target promotions towards return customers for items they purchase frequently to stimulate more sales. <br>
+
+There are many additional types of analysis that could be performed with this data set to gain insight into the company's customers. A recommendation for future research is to understand what regional differences exist between purchase types. This analysis could be performed with additional hued, faceted, scatter plots as demonstrated with the education variable above. Understanding regional purchase patterns would allow the company to tailor its product mix geographically, which would improve sales in those regions. It may also reveal new trends in the dataset that are not easy to recognize with intuition alone.
+
+# References
+
+Bryan, Jennifer. (2017). <i> ggplot2-tutorial </i>. github.com. retrieved 10/22/22 from https://github.com/jennybc/ggplot2-tutorial <br>
+
+Hult International Business School. (n.d.). <i> marketing data </i>. dataset. retrieved 10/22/22 from https://worldclass.regis.edu/d2l/le/content/297311/Home
+

@@ -1,0 +1,158 @@
+---
+title: "MSDS660_Week8_Assignment_APeetz"
+output: pdf_document
+date: "2022-12-11"
+---
+
+Adam Peetz<br>
+
+MSDS660 Week 8 Assignment<br>
+
+Regis University <br>
+
+Dr. Siripun Sanguansintukul<br>
+
+December 11th 2022<br>
+
+# Non-Parametric Tests
+
+```{r, warning=FALSE,message=FALSE,error=FALSE}
+library(data.table)
+library(tidyverse)
+library(dplyr)
+library(ggplot2)
+library(openintro)
+library(BSDA)
+library(tidyr)
+library(agricolae)
+
+# load data
+bio_df  <- as.data.table(biontech_adolescents)
+fine_df <- as.data.table(daycare_fines)
+vocb_df <- as.data.table(read_csv("vocab.csv",show_col_types = FALSE))
+```
+
+# BioNTech Adolescent Vaccine Trials
+
+BioNTech created a vaccine to protect against covid-19. This vaccine was tested on a group of 2,260 adolescents between the ages of 12 and 15. The group was divided into two halves; a placebo group consisting of 1,129 adolescents, and vaccinated group of 1,131. 18 cases of covid-19 were seen in the placebo group, and 0 were experienced by the vaccinated group. 18 cases are less than 2% of the total placebo group. The significance of this outcome can be proven with a statistical test.
+
+```{R}
+ggplot(biontech_adolescents, aes(y = group, fill = outcome)) +
+geom_bar()
+
+bio_df$group <- recode(bio_df$group, placebo=0, vaccine=1)
+bio_df$group<-as.integer(bio_df$group)
+
+bio_df$outcome <- recode(bio_df$outcome, `no COVID-19`=0, `COVID-19`=1)
+bio_df$outcome<-as.integer(bio_df$outcome)
+
+```
+
+# One-sided Mann-Whitney test
+
+A One-Sided Mann-Whitney Test checks for significance between independent samples. It can be used to check for significance in the difference between outcomes for individuals who received the vaccine against those who got the placebo. <br>
+
+Ho: The medians of values for each group are equal. <br>
+
+Ha: The medians of values for each group are not equal. <br>
+
+A p-value of less than 0.05 allows rejection of the null hypothesis. There is a significant difference in the outcome for those who received the vaccine against those who got the placebo. This indicates a significant benefit from the vaccine which lends support to its distribution to adolescents
+
+```{r}
+wilcox.test(bio_df$outcome, bio_df$group, exact = FALSE, conf.int = TRUE)
+```
+
+# Daycare Fines and the Deterrence Hypothesis
+
+The daycare fines data set tests the deterrence hypothesis which predicts the introduction of a penalty will reduce the occurrence of the behavior being fined. 10 daycare centers were used in the study. 6 of them introduced a fine for picking up children late and 4 of them acted as a control and made no change. The study showed that instituting a fine increased the number of late pickups and that the number of late pickups at those centers continued to stay high after the fine was removed. A statistical test can be employed to show if the difference in late pickups between the two groups is significant.
+
+```{r}
+# visualize dataset
+daycare_fines %>%
+  group_by(week, group) %>%
+  summarise(avg_late_pickups = mean(late_pickups), .groups = "drop") %>%
+  ggplot(aes(x = week, y = avg_late_pickups, group = group, color = group)) +
+  geom_point() +
+  geom_line()
+```
+
+
+```{r}
+# prepare Data
+fine_df$group <- recode(fine_df$group, control=0, test=1)
+fine_df$group<-as.integer(fine_df$group)
+```
+
+
+# One-Sided Mann-Whitney Test 
+
+A One-Sided Mann-Whitney Test checks for significance between independent samples. It can be used to check for significance in the difference between late pickups for centers that instituted late pickup fines. <br>
+
+Ho: The medians of values for each group are equal. <br>
+
+Ha: The medians of values for each group are not equal. <br>
+
+A p-value of less than 0.05 allows rejection of the null hypothesis. There is a significant difference in the number of late pickups for centers that have instituted fees.
+
+```{R}
+#One-sided Mann-Whitney test
+wilcox.test(fine_df$late_pickups, fine_df$group, alternative = 'greater', exact = FALSE, conf.int = TRUE)
+```
+
+# Vocab
+
+The vocab data set records the performance of participants on a vocab test before and after training. The overall distribution of vocab scores appears to be better after training, with participants averaging higher scores after training. The significance of this increase can be proven with a statistical test.
+
+```{r}
+# reshaping
+# temp column to create room to reshape
+vocb_df$temp <- 0 
+# convert column names into row values
+vocb_df <- melt(vocb_df, id.vars=3, variable.name = 'cycle', value.name = 'score')
+# drop NAs
+vocb_df <- vocb_df[complete.cases(vocb_df), ] 
+# drop temp column 
+vocb_df$temp <- NULL  
+#visualize
+plot(vocb_df)
+# revalue
+vocb_df$cycle <- recode(vocb_df$cycle, before.training=0, after.training=1)
+# cast as integer
+vocb_df$cycle <- as.integer(vocb_df$cycle)
+```
+
+# Sign Test to Determine the Efficacy of Vocab Training
+
+A Sign Test is useful for comparing paired observations. The before and after training observations in the vocab dataset are an example of paired observations. Each "before" score ties to an "after". The test can be used to compare medians and determine if one is significantly different than the other. <br>
+
+Ho: The median of the differences between pairs in group A and group B is zero. <br>
+
+Ha: The median of the differences between pairs in group A and group B is not zero.<br>
+
+A p-value of less than 0.05 allows rejection of the null hypothesis. There is a significant difference in the before and after training scores.
+
+```{R}
+# Sign Test
+SIGN.test(x = vocb_df$score, y = vocb_df$cycle, alternative = 'greater')
+```
+
+# Wilcoxon Signed-Rank Test 
+
+A Wilcoxon Signed-Rank Test is another test for paired samples. It can be used to test for significance in the differences between the before and after vocab training scores.  <br>
+
+Ho: The median of the differences is not different than zero. <br>
+
+Ha: The median of the differences is different than zero. <br>
+
+A p value of less than 0.05 allows the null hypothesis to be rejected. The median difference is greater than 0 between sample groups.
+
+```{R}
+# Wilcoxon Signed- Rank 
+wilcox.test(vocb_df$score, vocb_df$cycle, alternative = 'greater', paired=TRUE, correct=TRUE, exact = FALSE, conf.int = TRUE)
+```
+
+# References
+
+OpenIntro. (2022). Package ‘openintro’. retrieved 12/09/22 from https://cran.r-project.org/web/packages/openintro/openintro.pdf
+
+MSDS660. (2022). Statistical Methods and Experimental Design. Taught by Dr. Siripun Sanguansintukul. <br>

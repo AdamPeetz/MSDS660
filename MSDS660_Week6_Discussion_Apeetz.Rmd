@@ -1,0 +1,270 @@
+---
+title: "MSDS660_Week6_Discussion_Apeetz"
+output: pdf_document
+date: "2022-11-13"
+---
+
+Adam Peetz<br>
+
+MSDS660 Week 6 Discussion<br>
+
+Regis University <br>
+
+Dr. Siripun Sanguansintukul<br>
+
+November 24th 2022<br>
+
+# Linear Regression 
+
+Discussion Activity:
+For Discussion, continue working on the loans file and respond to the following questions.
+1.Does annual income matter for the loan amount or its interest rate? 
+2. Pick another DV (not loan_amount) and make a hypothesis of variables that maybe related. You need to include at least 3 IVs in the analysis.
+3. Run several MLR models. Be sure to consider if you need to add/remove or transform variables.
+4. Perform tests of diagnostics, i.e. with plot(), correlation, and vif.
+5. Are there variables currently not in the data set that may be beneficial to your analysis? Does your initial hypothesis hold?
+5. Post your rfile and responses to the questions to the Week 6 discussion.
+
+
+```{r, warning=FALSE,message=FALSE,error=FALSE}
+# load libraries
+library(tidyverse)
+library(data.table)
+library(dplyr)
+library(car)
+library(corrplot)
+library(MASS)
+library('fastDummies')
+
+#heatmap and custom colors
+#install.packages("reshape2")
+library(reshape2)
+#install.packages("viridis")  
+library("viridis")
+
+# load data
+data <- read_csv("loans_full_schema.csv",show_col_types = FALSE)
+# convert data to table
+df<-as.data.table(data)
+```
+
+# 1.Does annual income matter for the loan amount or its interest rate? 
+
+## F-Statistic Tests
+
+Ho: Where p > 0.05 There is no relationship between ANY of the independent variables and Y<br>
+
+Ha: Where p < 0.05 AT LEAST 1 independent variable is related to Y <br>
+
+## Annual Income and Loan Amount
+
+A F-Statistic of < 0.05 indicates that the null hypothesis is true. Loan amount is related to annual income.<br>
+
+The slope of the line is 0.05 with an intercept of 12,268.<br>
+
+Every 1,000 increase in income increases loan amount by 51 dollars.<br>
+
+## Annual income and interest rate
+
+A F-Statistic of < 0.05 indicates that the null hypothesis is true. Loan amount is related to interest rate.<br>
+
+The slope of the line is -0.000007 with an intercept of 13.<br>
+
+Every 1,000 increase in income decreases interest rate by 0.007 percent.<br>
+
+```{r}
+# fit model
+slm <- lm(loan_amount ~ df$annual_income, data = df)
+
+# show model summary
+summary(slm)
+par(mfrow=c(2,2))
+plot(slm)
+```
+
+```{r}
+# Fit model
+slm <- lm(interest_rate ~ df$annual_income, data = df)
+
+#show model summary
+summary(slm)
+par(mfrow=c(2,2))
+plot(slm)
+```
+
+# 2. Pick another DV (not loan_amount) and make a hypothesis of variables that maybe related. You need to include at least 3 IVs in the analysis.
+
+#### Hypothesis
+Total_credit_limit is related to total_credit_lines, accounts_opened_24m, and num_mort_accounts. A prerson with more credit lines, recently opened accounts, and mortgages will have higher total credit.
+
+## Results
+
+A F-Statistic of < 0.05 indicates that the null hypothesis is true. These variables are related to Total_credit_limit.<br>
+
+Number of mortgage accounts has a big impact on total_credit_limit, every additional mortgage account increases credit limit by 54804.<br>
+
+```{r}
+# select data for model
+df_1 <- df %>% dplyr::select(total_credit_limit, total_credit_lines, accounts_opened_24m, num_mort_accounts)   
+
+# fit model
+fit_1 <- lm(total_credit_limit ~ ., data = df_1)
+
+# show model summary
+summary(fit_1)
+AIC(fit_1)
+```
+
+# 3. Run several MLR models. Be sure to consider if you need to add/remove or transform variables.
+
+## Adding Variables
+
+Additional variables may be related to total_credit_limit. In addition to the original variables, application_type, interest_rate, open_credit_lines, total_debit_limit, number_open_cc_accounts, and grade will be added to the model. Application_type and grade both contain category labels instead of numerical values. These two features are transformed into sparse numerical matrices using one-hot-encoding. <br>
+
+These additional features improve the AIC of the model from 266657 to 264793.
+
+```{r}
+# Select additional variables
+df_2 <- df %>% dplyr::select(total_credit_limit, total_credit_lines, accounts_opened_24m, num_mort_accounts, application_type, interest_rate, open_credit_lines, total_debit_limit, num_open_cc_accounts, grade)  
+
+# One hot encoding categorical variables
+dum_df_2 <- dummy_cols(df_2,
+                       select_columns=c('grade','application_type'),
+                       remove_selected_columns = TRUE)
+
+# fit model
+fit_2 <- lm(total_credit_limit ~ ., data = dum_df_2)
+
+# show model statistics
+summary(fit_2)
+AIC(fit_2)
+```
+
+## Removing Outliers
+
+There are several outliers in the total_credit_limit column. These will be removed to help normalize the distribution of the feature which will increase model performance. <br>
+
+Removing outliers further improves model performance from 264793 to 249100.
+
+```{r}
+# remove outliers
+Q <- quantile(dum_df_2$total_credit_limit, probs=c(.25, .75), na.rm = TRUE)
+iqr <- IQR(dum_df_2$total_credit_limit, na.rm = TRUE)
+up <-  Q[2]+1.5*iqr # Upper Range  
+low<- Q[1]-1.5*iqr # Lower Range
+clean_dum_df_2<- subset(dum_df_2, dum_df_2$total_credit_limit > (Q[1] - 1.5*iqr) & dum_df_2$total_credit_limit < (Q[2]+1.5*iqr))
+
+# fit model
+fit_3 <- lm(total_credit_limit ~ ., data = clean_dum_df_2)
+
+# show model charts and results
+summary(fit_3)
+AIC(fit_3)
+```
+
+## Stepwise AIC
+
+A few of the variables are considered statistically insignificant for the prediction of total_credit_limit and could be removed from the model. The best combination of features can be programmatically generated using a stepwise selection process. The stepAIC function recommends a combination of accounts_opened_24m + num_mort_accounts + open_credit_lines + total_debit_limit + num_open_cc_accounts + grade_B + application_type_individual for prediction of total_credit_limit. <br>
+
+The model with features selected by stepwise AIC improves from 249100 to 249090. <br>
+
+```{r}
+# Show step AIC
+stepAIC(fit_3, direction="both")
+
+# fit model
+fit_4 <- lm(formula = total_credit_limit ~ accounts_opened_24m + num_mort_accounts + 
+            open_credit_lines + total_debit_limit + num_open_cc_accounts + 
+            grade_B + application_type_individual, data = clean_dum_df_2)
+
+# model summary
+summary(fit_4)
+AIC(fit_4)
+
+```
+
+# Best model by AIC
+
+Fit_4, the model with outliers removed and additional features selected by stepwise AIC, is the best performing model.
+
+```{r}
+# score all models
+# mode
+AIC(fit_1)
+AIC(fit_2)
+AIC(fit_3)
+AIC(fit_4)
+```
+
+# 4. Perform tests of diagnostics, i.e. with plot(), correlation, and vif.
+
+## plot
+
+Residual plots indicate some departures from homogeneous variance in the dataset.
+
+A Q-Q plot shows the data set is not normally distributed. Additional corrections could be made to features with outliers to restore normality to the residual and Q-Q plots.
+
+```{r}
+par(mfrow=c(2,2))
+plot(fit_4)
+```
+
+## Correlation
+
+Checking for multicollinearity issues with a heatmap shows open_credit_lines is correlated to num_open_cc_accounts. A correlation score that exceed 0.8 indicates that these two features are essentially redundant. Open_credit_lines shows higher correlation to the prediction variable so it should be more impactful for the prediction of total_credit_limit than num_open_cc_accounts. Num_open_cc_accounts should be dropped from the model.
+
+```{r}
+#define lower triangle function
+get_lower_tri<-function(cormat){
+    cormat[lower.tri(cormat)] <- NA
+    return(cormat)}
+
+#define upper triangle function
+get_upper_tri <- function(cormat){
+    cormat[upper.tri(cormat)]<- NA
+    return(cormat)}
+
+#translate dataframe to correlation dataframe
+cormap <- round(cor(clean_dum_df_2),2)
+
+#get lower triangle
+tri <- get_lower_tri(cormap)
+
+#melt the corrleation dataframe
+melted_cormap <- melt(tri, na.rm=TRUE)
+
+#apply gg plotting function
+ggplot(data = melted_cormap, aes(x=Var2, y=Var1, fill=value)) + 
+        geom_tile() + 
+        geom_text(aes(Var2, Var1, label = value), color = "black", size = 4) +
+        scale_fill_viridis(discrete = FALSE, option="H") +
+        theme(
+        axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+        axis.title.x = element_blank(),
+        axis.title.y = element_blank(),
+        panel.grid.major = element_blank(),
+        panel.border = element_blank(),
+        panel.background = element_blank(),
+        axis.ticks = element_blank(),
+        legend.justification = c(1, 0),
+        legend.position = c(0.4, 0.7),
+        legend.direction = "horizontal")+
+        guides(fill = guide_colorbar(barwidth = 7, barheight = 1,
+                      title.position = "top", title.hjust = 0.5))
+
+```
+
+## VIF
+
+Variance-Inflation-Factor (VIF) is another check for multicollinearity issues. The best possible VIF score is 1, which indicates the absence of multicollinearity. VIF values that exceed 5 are problematic and should be addressed in the model. All features of the fit_4 model have VIF scores below 5. Open_credit_lines and num_open_cc_accounts do have higher VIF scores which matches the results of the correlation plot that suggested these variables have multicollinearity issues.
+
+```{r}
+vif(fit_4)
+```
+
+# 5. Are there variables currently not in the data set that may be beneficial to your analysis? Does your initial hypothesis hold?
+
+There are a significant number of variables that impact total_credit_limit in the dataset. Additional variables are not needed to analyze total_credit_limit. <br>
+
+The three variables initially chosen remained in the model after reduction by stepwise AIC and through collinearity checks. The initial hypothesis holds. Total_credit_limit is related to total_credit_lines, accounts_opened_24m, and num_mort_accounts. A person with more credit lines, recently opened accounts, and mortgages will have higher total credit.
+

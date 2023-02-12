@@ -1,0 +1,50 @@
+---
+title: "MSDS606_Week1_Discussion"
+output: pdf_document
+date: "2022-10-20"
+author: "Adam Peetz"
+---
+
+```{r setup and libraries}
+#set working directory
+setwd("C:\\Users\\adamg\\Documents\\MSDS_660\\Week_1")
+#always use session -> restart r to reboot r session prior to engagement
+#load libraries
+library(tidyverse)
+library(scales)
+```
+```{r load dataset}
+#load csv data
+waste<-read_csv("plastic_waste.csv")
+```
+
+# Dataset desctiption
+
+The plastic_waste.csv dataset is a clean data file. It contains 192 rows of data spread across7 columns of mixed categorical and numerical features. These features have no missing values. <br>
+
+There was an issue with the column labels in my data set, a return, indicated by backslash n, had been added to the feature names for mismanaged_waste_2010 and mismanaged_waste_2025. I manually removed the return from the headers in the .csv file in excel and resaved it to make it easier to manipulate in R. I have attached the .csv file I modified for use with my notebook. 
+```{r}
+#basic dataset queries
+names(waste)
+ncol(waste)
+length(waste)
+dim(waste)
+nrow(waste)
+
+#get statistical summary of gapminder
+summary(waste)
+```
+
+# Correlation of population and tons of waste per person
+
+
+```{r}
+#create scatter plots of population and waste generation variables
+#plotcode
+plot(log(population) ~ waste_gen, waste, 
+     main = "Population vs Waste Generated",
+     xlab="Waste Generated per Person",
+     ylab="Population (logrithmic scale)")
+```
+
+

@@ -1,0 +1,234 @@
+---
+title: "Discussion_Wk2"
+output:
+  pdf_document: default
+---
+Discussion Activity:
+Continue working on this data set to discern any trends in the bird/wildlife dataset during time period (1995- March 2022) at DIA. You can pick a different time frame and parameters if you are interested using the faa's query tool (https://wildlife.faa.gov/search).
+
+Create a box plot showing a relationship between year and number of birds struck
+Create a plot with ggplot() showing the extent of damage or aircraft by bird collisions
+Use a subset of data where the incident occurred after 2015 and compute the means and SDs of distance by the number of birds struck. The function tapply() is useful for this.
+Create a final plot of bird collisions by engine type and distance (nautical miles from airport). You’ll need to revalue engine type and do some class conversions to create a good-looking plot. Be sure to include labels and title. 
+
+Post to the discussion thread:
+1. Any problems/concerns with data. 
+2. Plots that you think may be relevant to support your assertions.
+3. Summary and interpretation of results. 
+
+## Set working directory
+```{r}
+#set working directory
+setwd("C:\\Users\\adamg\\Documents\\MSDS_660\\Week_2")
+```
+
+## Load Libraries
+
+```{r setup, include=FALSE}
+library (tidyverse)
+library(data.table)
+library(dplyr)
+library(plyr)
+library(ggplot2)
+#install.packages("hexbin")
+library(hexbin)
+```
+
+## Load the data
+
+```{r, warning=FALSE,message=FALSE,error=FALSE}
+#read data from csv
+df<-read_csv("wildlife.csv")
+
+#convert to data.table
+df<-as.data.table(df)
+
+#convert column names to lower case
+names(df) <- tolower(names(df)) #convert column names to lower case
+summary(df)
+```
+
+## Including Plots
+Create a boxplot that shows the number of birds struck by aircraft by year at DIA. You may need to reorder categories of number of birds struck by using factor.
+
+```{r }
+#Convert character column to factor 
+df$num_struck<-factor(df$num_struck, levels = c("0","1","2-10","11-100","over 100"))
+
+#set title font size
+par(cex.main=1) 
+
+#generate boxplot
+boxplot(incident_year~num_struck,
+        main="Bird Strike Size by Year",
+        xlab="Size of Bird Strike",
+        ylab="Year",
+        data=df)
+
+```
+
+Let's see if airplanes are reporting any damage associated with bird collisions. Load plyr library. To do this follow the prompts in the comments.
+```{r}
+#subset data
+damage_level_df <- subset(df, !is.na(damage_level))
+
+#Convert character column to factor 
+damage_level_df$damage_level<-factor(damage_level_df$damage_level, levels = c("N","M","M?","S","D"))
+
+#relabel damage level names for clarity with revalue from plyr
+damage_level_df$damage_level<-revalue(damage_level_df$damage_level, c(N="none", 
+                                                                      M="minor", 
+                                                                     `M?` = "uncertain", 
+                                                                      S ="substantial",
+                                                                      D ="destroyed"
+                                                                      ))
+ 
+#create a plot with ggplot and label the axis and give a title
+ggplot(damage_level_df, aes(y = fct_infreq(damage_level), fill=damage_level)) +
+  geom_bar() +
+  scale_y_discrete(limits=rev)+
+  labs(x = "Count",
+       y = "Damage Type",
+       title="What types of damage have birdstrikes caused?")+
+  theme_bw() + 
+  theme(panel.border = element_blank(), 
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(), 
+        axis.line = element_line(colour = "black"),
+        legend.position="none")
+
+```
+# Data Slicing
+We'll now slice and dice the data to look at more recent data.
+```{r}
+#create a subset of our data and only look at bird collisions occurring in 2015 and later.
+post_2015 = df[df$incident_year >= 2015,]
+
+# run summary on year to check we filtered correctly
+print("Summary of incident_year column")
+summary(post_2015$incident_year)
+
+#use tapply to find means and sd of distance by number of birds struck on the new subset of data
+print("Mean and SD of Distance Grouped by Birdstrike")
+print("Mean")
+tapply(post_2015$distance, post_2015$num_struck, mean, na.rm=TRUE)
+print("Standard Deviation")
+tapply(post_2015$distance, post_2015$num_struck, sd, na.rm=TRUE)
+```
+
+Here is more practice slicing and dicing data and creating a good looking plot! Use the original dataset.
+
+```{r}
+#subset data
+type_eng_df <- subset(df, !is.na(type_eng))
+
+#Convert character column to factor 
+type_eng_df$type_eng<-factor(type_eng_df$type_eng, levels = c("A","B","C","D","E","F","Y"))
+
+#use revalue from plyr to give clear labels to type_eng. Use the data directory to find what the abbreviations mean.
+type_eng_df$type_eng<-revalue(type_eng_df$type_eng, c("A"="Piston", 
+                                                      "B"="Turbojet", 
+                                                      "C"="Turboprop", 
+                                                      "D"="Turbofan",
+                                                      "E"="Glider",
+                                                      "F"="Helicopter",
+                                                      "Y"="Other"))
+
+#draw ggplot
+ggplot(type_eng_df, aes(y = fct_infreq(type_eng), fill=fct_infreq(type_eng))) +
+  geom_bar() +
+  scale_y_discrete(limits=rev)+
+  labs(x = "Count",
+       y = "Engine Type",
+       title="Which engine type has had the most birdstrikes?")+
+  theme_bw() + 
+  theme(panel.border = element_blank(), 
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(), 
+        axis.line = element_line(colour = "black"),
+        legend.position="none")
+
+```
+
+```{r}
+#convert num_struck to integer
+df$num_struck<- as.integer(df$num_struck)
+
+summary(df$num_struck)
+
+#remove missing data from type_eng 
+#performed in pipeline above
+
+```
+
+
+Create a final plot of bird collisions by plane type and distance (nautical miles from airport). Use ggplot and make sure that category labels are appropriate, provide title, axis labels and aesthetics are looking good!
+```{r, warning=FALSE}
+birds_by_aircraft<- df[!is.na(df$type_eng),]
+
+birds_by_aircraft$type_eng<-revalue(birds_by_aircraft$type_eng, c("A"="Piston", 
+                                                                  #"B"="Turbojet", 
+                                                                  "C"="Turboprop", 
+                                                                  "D"="Turbofan"
+                                                                  #"E"="Glider",
+                                                                  #"F"="Helicopter",
+                                                                  #"Y"="Other",
+                                                                  ))
+
+
+plot<-ggplot(birds_by_aircraft, aes(x=distance, y=num_struck)) +
+  geom_point()+
+  facet_wrap(~type_eng, nrow=3) + 
+  scale_y_continuous(breaks = 2:4,labels=c("1", "2-10","11-100"))+
+  labs(x = 'Distance from Airport',
+       y = 'Flocksize',
+       title = 'Flocksize of birdstrike at different distances by engine type.')
+plot
+
+```
+
+```{r, warning=FALSE}
+ggplot(birds_by_aircraft, aes(x=distance, y=height)) +
+  geom_point(alpha = (2/3), size = 2, aes(color = phase_of_flight))+
+  labs(x = 'Distance from Airport',
+       y = 'Height',
+       title = 'Birdstrikes: Height vs Distance ')+
+  theme_bw() + 
+  theme(panel.border = element_blank(), 
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(), 
+        axis.line = element_line(colour = "black") 
+        )
+```
+
+
+Provide a summary of your process and observations from the data.
+Post to the discussion thread:
+1. Any problems/concerns with data. <br>
+
+  The NA values in type_eng and damage_level were troublesome. Applying revalue over rows with NA messed up the data structure which prevented the subset() and fct_infreq() functions in the ggplot from running as advertised in the lab. To get around this I applied filtering before revaluing to remove the NA rows prior to revaluing. This allowed the ggplots to be drawn but doesn't imprint the revalues in the original data set. Did anyone find a way to deal with NA's inside the revalue function itself?   <br>
+  
+  Converting num_struck to an integer is problematic. It uses the factor levels as numeric values, so values of 2-4 are given to each row rather than numbers that represent the count of birds in each bird strike where 2=1, 3=2-10, and 4=11-100. This variable records categorical "flock size" more so than the number of birds the aircraft hit. This led me to create a graph which shows flock size at different distances by engine. Incidents involving large flocks have occurred close to the airport. Large flocks are struck less often further away from the airport.
+  
+  
+The method I came up with to deal with this was to mutate a new column with integer values based on the value of the num_struck column. I did not use this code for analysis but a method for generating a column with values based on values in another column will come in handy in the future.  
+  
+```{r}
+# Adding new column to data frame with values based on existing values in an adjacent column
+df <- df %>% mutate(birds =case_when(num_struck == 1 ~ 0, 
+                                     num_struck == 2 ~ 1, 
+                                     num_struck == 3 ~ 5,
+                                     num_struck == 4 ~ 50, 
+                                     num_struck == 5 ~ 100, 
+                                     )
+                    )
+summary(df$birds)
+```
+  
+2. Plots that you think may be relevant to support your assertions.
+  
+3. Summary and interpretation of results. <br>
+
+The data set is biased by the airport. DIA serves large passenger planes, primarily with turbo fan engines. This is reflected by the large number of bird strike incidents seen by turbo fan planes. A municipal airport that does not service large passenger planes would see a different mix of engine types in its bird strike data and a military airport might have turbojet and helicopter strikes in its data. <br>
+
+It is also not surprising that most bird strikes occur close to the airport. Most passenger planes cruise at a height of over 30,000 feet where there are no birds. Therefore, most bird strikes are likely to occur close to the airport during takeoff or descent while the planes are at low altitude. Plotting bird strike occurrences by distance and height with a scatterplot demonstrates the relationship between distance and height during bird strike events with most occurring low and close to the airport. 

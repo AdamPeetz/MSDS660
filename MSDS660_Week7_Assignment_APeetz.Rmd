@@ -1,0 +1,222 @@
+---
+title: "MSDS660_Week7_Assignment_APeetz"
+output: pdf_document
+date: "2022-11-25"
+---
+
+Adam Peetz<br>
+
+MSDS660 Week 7 Assignment<br>
+
+Regis University <br>
+
+Dr. Siripun Sanguansintukul<br>
+
+December 4th 2022<br>
+
+# Logistic Regression for Sale Response
+
+#### Data:
+The data used in this notebook is marketing data provided by the Hult International School of Business. 
+
+#### Objective:
+Predict a customer’s response to a marketing campaign (i.e. 1 if customer accepted the offer in the last campaign, 0 otherwise).
+
+```{r, warning=FALSE,message=FALSE,error=FALSE}
+#set working directory
+setwd("C:\\Users\\adamg\\Documents\\MSDS_660\\Week_7")
+
+#load libraries
+library(tidyverse)
+library(data.table)
+library(car)
+library(caTools)
+library(readr)
+library(caret)
+library('fastDummies')
+library('ggpubr')
+library(MASS)
+library(pROC)
+
+# load data 
+data <- read_csv("marketing.csv",show_col_types = FALSE)
+# convert data to table
+df <-as.data.table(data)
+```
+
+# Cleaning Data/Feature Engineering
+
+## Income
+
+The income variable starts as a character column. The $ sign needs to be removed from the start of each income so it can be treated as a numerical value. The Income column also contains several outliers that need to be removed. One couple has stated they have an income of 666,666 dollars which is a suspicious number. Rows containing outlying income, such as the 666,666 row, will be removed from the dataset prior to analysis.
+
+## Feature Selection
+
+Some features such as customer ID are unique for each row. These unique identifying features will not correlate to other features in the dataset and will be dropped from the model. Features corresponding to purchase counts, amounts, and customer demographics will be kept in the model.
+
+## Dummy Variables
+
+There are several categorical variables in the model. Education, marital status, and a customer's country all need to be transformed into numerical values before they can be evaluated by the model. These features will be one-hot encoded into sparse binary matrices using the dummy_col() function in the code below.
+
+```{r}
+#remove NA from column
+df<- df[-which(is.na(df$Income)), ]
+
+#remove $ signs
+df$Income <- parse_number(df$Income)
+
+# subset
+df_1 <- df %>% dplyr::select(Education, Income, Kidhome, MntWines, MntFruits, MntMeatProducts, MntFishProducts, MntSweetProducts, MntGoldProds, Country, Marital_Status, NumDealsPurchases, NumCatalogPurchases, NumStorePurchases, NumWebPurchases, Response) 
+
+# One hot encoding categorical variables
+dum_df_1 <- dummy_cols(df_1,
+                       select_columns=c('Education','Marital_Status', 'Country'),
+                       remove_selected_columns = TRUE)
+
+# remove outliers
+Q <- quantile(dum_df_1$Income, probs=c(.25, .75), na.rm = TRUE)
+iqr <- IQR(dum_df_1$Income, na.rm = TRUE)
+up <-  Q[2]+1.5*iqr # Upper Range  
+low<- Q[1]-1.5*iqr # Lower Range
+dum_df_1<- subset(dum_df_1, dum_df_1$Income > (Q[1] - 1.5*iqr) & dum_df_1$Income < (Q[2]+1.5*iqr))
+
+```
+
+# Train Test Split
+
+After cleaning and feature selection, the dataset is broken into training and test sets to provide data sets for the development of the model. A seed is set here to ensure reproducibility of the results. 
+
+```{r}
+# set seed
+set.seed(1)
+
+# create train test split
+samp <- sample.split(dum_df_1$Response, SplitRatio = 0.8)
+train <- subset(dum_df_1, samp == TRUE)
+test <- subset(dum_df_1, samp == FALSE)
+```
+
+# Model #1, Using All Available Data:
+
+An initial model is created using all data except for -Education_PHD, -Marital_Status_YOLO, and -Country_US. These three features were shown to have multicollinearity issues by the model and have been removed. Creating an initial model allows feature selection by stepwiseAIC in the next step. 
+
+```{r}
+# generate model
+model <- glm(Response ~ . -Education_PhD -Marital_Status_YOLO -Country_US, data = train, family = "binomial")
+
+# Summary
+summary(model)
+
+# check data
+plot(model)
+
+# Check for collinearity
+vif(model)
+```
+
+# Feature Selection by Stepwise AIC
+
+StepwiseAIC is a method for selecting the best combination of features for the model. It does this by sequentially testing different combinations of features and returns the best combination based on its AIC score.
+
+```{r}
+# Perform stepwiseAIC
+stepAIC(model, direction = 'both')
+```
+
+# Model #2: Features Selected by Stepwise AIC
+
+StepwiseAIC recommends a model that contains the number of kids in each home, the amounts spent on wines and meat, the number of purchases a customer has made, and a select combination of demographic variables for a customer's education, marital status, and country. A list of all included features is shown in the cell below.
+
+```{r}
+# create glm model
+model2 <-  glm(formula = Response ~ Kidhome + MntWines + MntMeatProducts + 
+    NumCatalogPurchases + NumStorePurchases + NumWebPurchases + 
+    Education_Basic + Education_Graduation + Marital_Status_Divorced + 
+    Marital_Status_Married + Marital_Status_Single + Marital_Status_Together + 
+    Marital_Status_Widow + Country_AUS + Country_GER + Country_SA + 
+    Country_SP, family = "binomial", data = train)
+```
+
+# Confusion Matrix for Predictions on Training
+
+A confusion matrix can be generated to show how the model predicted against the ground truth labels of the dataset. Shown below for the training set, the model was able to achieve 85.56% accuracy. This high accuracy is misleading and is a result of predictions for class 0 in a dataset that contains many examples of class 0. The model had a much harder time predicting for the minority class. This prediction accuracy does not significantly exceed the null information rate of 84.84%.
+
+```{r}
+# generate predictions
+trainpreds <- predict(model2, type = 'response', train)
+
+# Round prediction values at 0.5 cutoff threshold
+trainp <- factor(trainpreds >= 0.5,labels = c('0', '1'))
+
+# plot confusion matrix
+trainCM <- confusionMatrix(trainp,as.factor(train$Response))
+trainCM
+```
+
+# Confusion Matrix for Predictions on Test
+
+A confusion matrix for predictions against the test dataset reveals the same pattern shown for the training data. 85.07% accuracy, which is a result of predictions for the majority class in a test set that contains many examples of that class.
+
+```{r}
+# generate predictions         
+testpreds <- predict(model2, type = 'response', test)
+
+# round predictions around 0.5 threshold
+testp <- factor(testpreds >= 0.5, labels = c('0', '1'))
+
+# generate confusion matrix
+testCM <- confusionMatrix(testp, as.factor(test$Response))
+testCM
+```
+
+# ROC Curve and Threshold
+
+If this model had been used to extend offers to customers, it would have only sent 19 offers, and missed 57 customers who are likely to say yes to the deal. This is not ideal. Fortunately, the model's tendency to predict positive outcomes can be adjusted by fine-tuning the prediction cutoff threshold used in the model. <br>
+
+The first step in threshold adjustment is to plot the model's ROC curve. An ROC curve displays the tradeoff between true positive and false positive predictions at different threshold settings. The point on the curve closest to the top left corner is considered the ideal threshold setting and can be automatically calculated as demonstrated in the code below.
+
+```{r, warning=FALSE}
+# Create a Roc curve and results for the Test data
+test_roc_curve <- roc(test$Response, testpreds)
+test_roc_curve
+plot(test_roc_curve)
+
+# set the threshold
+thresh <- coords(roc=test_roc_curve, x = 'best', best.method = 'closest.topleft', transpose=TRUE)
+
+# display threshold
+thresh
+```
+
+# Modifying predictions with a fine-tuned Threshold
+
+The ROC curve recommends a threshold setting of about 0.15. Adjusting the model's predictions around this threshold lowers the model's overall accuracy from 85.07% to 72.62% but boosts the number of true positive predictions. While the overall accuracy has decreased, the model now recommends sales to 40 out of 67 receptive customers, whereas the untuned model only recommended 10.
+
+```{r}
+# generate predictions and ground truth labels
+rounded_preds <- as.factor(as.integer(testpreds > thresh[1]))
+targets <- as.factor(as.integer(test$Response))
+
+# orient data for confusion matrix
+postResample(pred = rounded_preds, obs = targets)
+
+# generate confusion martrix
+confusionMatrix(rounded_preds, targets)
+```
+
+# Conclusion
+
+After cleaning and preparing the data for analysis, a logistic regression model was able to correctly predict the response of a customer around 85% of the time. This outcome did not significantly improve over the null information rate of 84%. <br>
+
+This accuracy is a result of a class imbalance in this data set. Future research could attempt to resolve this imbalance by under sampling the majority class or creating synthetic data points for the minority to attempt to balance the distribution of the dataset. This may improve the model's ability to predict for the minority class. <br>
+
+Fine tuning the threshold of the model made it more likely to predict positive outcomes. This results in more customers being sent offers who are likely to say yes to the deal. Threshhold adjustment improved true positive sale offers from 10/67 to 40/67.  <br>
+
+The tradeoff between false and true positive predictions made by threshold adjustment needs to be considered in the context of the model. In a medical context, false positives could result in unnecessary medical procedures. In marketing, offering sales to people who do not want them is probably harmless and may even result in additional sales from unexpected customers who are receptive to the offer. The company should proceed with deployment of the threshold adjusted model to maximize its sales.  <br>
+
+# References
+
+Hult International Business School. (n.d.). <i> marketing data </i>. dataset. retrieved 10/22/22 from https://worldclass.regis.edu/d2l/le/content/297311/Home
+
+MSDS660. (2022). Statistical Methods and Experimental Design. Taught by Dr. Siripun Sanguansintukul. <br>
+

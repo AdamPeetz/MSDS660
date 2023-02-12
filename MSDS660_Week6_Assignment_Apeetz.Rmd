@@ -1,0 +1,307 @@
+---
+title: "MSDS660_Week6_Assignment_Apeetz"
+output: pdf_document
+date: "2022-11-13"
+---
+
+Adam Peetz<br>
+
+MSDS660 Week 6 Assignment<br>
+
+Regis University <br>
+
+Dr. Siripun Sanguansintukul<br>
+
+November 27th 2022<br>
+
+```{r, warning=FALSE,message=FALSE,error=FALSE}
+# load libraries
+library(tidyverse)
+library(data.table)
+library(dplyr)
+library(car)
+library(corrplot)
+library(MASS)
+library('fastDummies')
+
+#heatmap and custom colors
+#install.packages("reshape2")
+library(reshape2)
+#install.packages("viridis")  
+library("viridis")
+
+# load data
+data <- read_csv("marketing.csv",show_col_types = FALSE)
+# convert data to table
+df<-as.data.table(data)
+```
+
+# Multiple Linear Regression on Marketing Data
+
+#### Hypothesis: 
+The total number of purchases made by a customer is significantly impacted by demographic variables such as their education, geographic location, and marital status.
+
+#### Data:
+The data used in this notebook is marketing data provided by the Hult International School of Business.
+
+# Total Purchases Variable:
+
+Total purchases can be created by adding together the number of purchases made in stores, on the web, and through the company's catalog. The newly created total purchases variable has an almost normal looking distribution with a spike in customers who have made fewer purchases. A boxplot shows that there are no outliers in the total purchases variable.
+
+
+```{r}
+#create totalpsum variable
+df$totalpsum <- df$NumStorePurchases +
+                df$NumWebPurchases + 
+                df$NumCatalogPurchases
+
+# histogram total sales variable
+hist(df$totalpsum,
+     main="Purchases at Store",
+     xlab="Total Purchases",
+     ylab="Customers",
+     col="blue",
+     breaks=100)
+
+# boxplot total sales variable
+boxplot(df$totalpsum, main="Total Purchases")
+
+```
+
+# Cleaning the data set
+
+## Removing NAs from Income
+
+Several customers have not supplied an Income in the data set. Rows for these customers will be removed from the data set. Income also needs to have the $ sign removed so it can be treated as a numerical variable.
+
+``` {r}
+#remove NA from column
+df<- df[-which(is.na(df$Income)), ]
+
+#remove $ signs
+df$Income <- parse_number(df$Income)
+
+```
+
+## Education Feature Engineering
+
+2nd Cycle refers to people who have completed their 2nd cycle of college. This is the same education level as Masters degree. Rows for 2n Cycle and Master will have labels applied to combine them in the dataset. 
+
+```{r}
+# feature engineer education
+# combine 2nd Cycle and Masters
+df<-df %>% mutate(Education_1 = case_when(Education == "PhD" ~ "Doctors",
+                                        Education == "Master" ~ "Masters",
+                                        Education == "2n Cycle" ~ "Masters",
+                                        Education == "Graduation" ~ "Bachelors",
+                                        Education == "Basic" ~ "High School") %>%
+           fct_relevel("High School",
+                       "Bachelors",
+                       "Masters",
+                       "Doctors"))
+
+```
+
+## Feature Selection
+
+All variables will be kept and tested except for those that identify unique customer details and the variables for purchase counts. Unique customer details like customer ID will not meaningfully correlate to the purchase count. Variables representing purchase counts from different sources were used to construct the dependent variable and have too much influence on that variable to be left in the model.
+
+```{r}
+# subset dataframe
+df_1 <- df %>% dplyr::select(totalpsum, Education_1, Income, Kidhome, MntWines, MntFruits, MntMeatProducts, MntFishProducts, MntSweetProducts, MntGoldProds, Country, Marital_Status, Year_Birth)   
+```
+
+## Dummies Variables
+
+Education, country, and marital status are all categorical features that contain text labels. These labels must be converted into a sparse binary matrix prior to analysis. This operation can be performed with the dummies function which applies one hot encoding to the categorical columns in the dataset.
+
+```{r}
+# One hot encoding categorical variables
+dum_df_1 <- dummy_cols(df_1,
+                       select_columns=c('Education_1','Marital_Status', 'Country'),
+                       remove_selected_columns = TRUE)
+
+```
+
+# Correlation Plot
+
+A correlation heatmap can be created to check for multicollinearity in the dataset. Any features that have correlation coefficients above 0.8 or below -0.8 have multicollinearity issues and one should be selected and removed from the model. The heatmap below does not reveal any collinearity issues in the selected features.
+
+```{r fig.height = 10, fig.width = 20}
+# correlation plot
+# define lower triangle function
+get_lower_tri<-function(cormat){
+    cormat[lower.tri(cormat)] <- NA
+    return(cormat)}
+
+# define upper triangle function
+get_upper_tri <- function(cormat){
+    cormat[upper.tri(cormat)]<- NA
+    return(cormat)}
+
+# translate dataframe to correlation dataframe
+cormap <- round(cor(dum_df_1),2)
+
+# get lower triangle
+tri <- get_lower_tri(cormap)
+
+# melt the corrleation dataframe
+melted_cormap <- melt(tri, na.rm=TRUE)
+
+# apply gg plotting function
+ggplot(data = melted_cormap, aes(x=Var2, y=Var1, fill=value)) + 
+        geom_tile() + 
+        geom_text(aes(Var2, Var1, label = value), color = "black", size = 4) +
+        scale_fill_viridis(discrete = FALSE, option="H") +
+        theme(
+        axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+        axis.title.x = element_blank(),
+        axis.title.y = element_blank(),
+        panel.grid.major = element_blank(),
+        panel.border = element_blank(),
+        panel.background = element_blank(),
+        axis.ticks = element_blank(),
+        legend.justification = c(1, 0),
+        legend.position = c(0.4, 0.7),
+        legend.direction = "horizontal")+
+        guides(fill = guide_colorbar(barwidth = 7, barheight = 1,
+                      title.position = "top", title.hjust = 0.5))
+
+```
+
+# Model: Fit_1
+
+A linear regression model can now be created for the features in the data set. Features for -Marital_Status_YOLO -Country_US and -Education_1_Doctors were shown to be multicollinear by the regression model and have been removed.
+
+## Summary
+
+Most of the demographic features created for education, marital status, and country do not pass the test for significance. The block of features that pass the test for significance are the amounts spent on different product categories. There are a few demographic features that are considered significant, such as being from the country Spain, which reduces purchase count by -1.05, or having a high school education which reduces purchase count by -1.896. 
+
+#### AIC Score:
+This model achieves and AIC score of 12231
+
+## Plots:
+
+#### Residuals vs Fitted:
+The residual plots show an increase in variance as purchase counts increase.<br>
+
+#### QQ Plots:
+The QQ Plot is approximately normal. There are a few outlying datapoints on either end of the model that sway the distribution. <br>
+
+#### Outliers:
+Several outlying datapoints are revealed in the diagnostic plots of the model. These rows were investigated and found to contain examples of extreme outliers or perhaps even forgery and will be removed from the dataset<br>
+
+ - Row 523, income is 666,666 - removing because this doesn't seem like a real salary.  <br>
+ 
+ - Row 955, income is 2447, and is an outlier for meat purchases (1750) and catalog purchases (28). This customer spends more than half of their total income on catalog meat purchases. They are an oddity and will be removed.
+ 
+```{r}
+# initial MLR w/o stepwise AIC
+# fit model
+fit_1 <- lm(totalpsum ~ . -Marital_Status_YOLO -Country_US -Education_1_Doctors, data = dum_df_1)
+
+# show model statistics
+summary(fit_1)
+plot(fit_1)
+AIC(fit_1)
+```
+
+# Fit_1 VIF
+
+Variance-Inflation-Factor (VIF) is a check for multicollinearity issues in the model. The best possible VIF score is 1, which indicates the absence of multicollinearity. VIF values that exceed 5 are problematic and should be addressed in the model. <br>
+
+Dummy features created for Marital_Status have high VIF scores, with "Married", "Single", "Divorced", and "Together", scoring in the 100's. These features should be removed from the model due to high collinearity.
+
+```{r}
+# initial MLR w/o stepwise AIC VIF
+vif(fit_1)
+```
+
+# Perform feature selection via stepwise AIC
+
+An optimum combination of features for regression can be selected using a stepwise process that tests different combinations until an optimum set is found. This operation is performed for the fitted model below. Stepwise selection should solve the multicollinearity issues revealed by the VIF. <br>
+
+The outlier rows identified in the diagnostic plots will also be removed here and the original model refitted without those outliers.
+
+
+```{r}
+# remove outlier rows
+dum_df_1 <- dum_df_1[-c(955, 523), ]
+
+# refit due to removed rows.
+fit_1 <- lm(totalpsum ~ . -Marital_Status_YOLO -Country_US -Education_1_Doctors, data = dum_df_1)
+
+# stepwise AIC
+stepAIC(fit_1, direction="both")
+```
+
+# Model: Fit_2 from stepwiseAIC
+
+A linear regression model can now be created for the features selected by stepwise AIC. Income + Kidhome + MntWines + MntFruits + MntMeatProducts + MntFishProducts + MntSweetProducts + MntGoldProds + Year_Birth + Education_1_High School + Country_SP + will be left in the model.
+
+#### AIC Score:
+This model improves on the previous score of 12231 with an AIC score of 12101.
+
+## Plots:
+
+#### Residuals vs Fitted:
+The residual plots show an increase in variance as purchase counts increase. There is a small improvement from removing the outlying datapoints shown in the previous model.<br>
+
+#### QQ Plots:
+The QQ Plot is approximately normal. <br>
+
+```{r}
+# stepwise model
+# fit model
+fit_2 <- lm(formula = totalpsum ~ Income + Kidhome + MntWines + MntFruits + 
+                      MntMeatProducts + MntFishProducts + MntSweetProducts + MntGoldProds + 
+                      Year_Birth + `Education_1_High School` + Country_SP,
+            data = dum_df_1)
+
+# show model statistics
+summary(fit_2)
+plot(fit_2)
+AIC(fit_2)
+```
+
+# Fit_2 VIF
+
+Removing many of the variables through stepwise AIC has taken care of the high VIF scores shown in the last model. All variables now have a VIF score of 1 or 2.
+
+```{r}
+# stepwise model VIF
+vif(fit_2)
+```
+
+# AIC summary scores
+
+The original model scores an AIC of 12123, the stepwise model improves upon this, achieving an AIC of 12101.
+
+```{r}
+# score all models
+# score fit_1
+AIC(fit_1)
+
+# score fit_2
+AIC(fit_2)
+
+```
+
+# Summary
+
+The R square score of this model indicates that 73% of the variance in the dependent variable can be explained by the model. An F-test statistic less than 0.05 indicates that at least one variable in the model significantly impacts the dependent variable.  <br>
+
+The highest positively correlated features in the model are the amounts spent on fruits and meats. Customers who spend more on fruits and meats will have a higher purchase count. This is not a surprising outcome as customers with the highest spend probably make more purchases.<br>
+
+The feature with the greatest negative correlation was the binary column for a high school education level. Customers with a high school education have around 9 fewer purchases than customers with a higher level of education. <br>
+
+It would be helpful to have additional demographic variables in the survey to test. It would allow analysis of how things like religion or political affiliation effect the count of purchases.<br>
+
+The original hypothesis does not hold out through the regression. Very few demographic features were chosen in the final model; only high_school_education and country_sp were included in the highest performing model. The variables that had the biggest impact were numerical values such as income or those corresponding to purchase amounts. <br>  
+
+
+# References
+
+MSDS660. (2022). Statistical Methods and Experimental Design. Taught by Dr. Siripun Sanguansintukul. <br>
+
+Hult International Business School. (n.d.). <i> marketing data </i>. dataset. retrieved 10/22/22 from https://worldclass.regis.edu/d2l/le/content/297311/Home

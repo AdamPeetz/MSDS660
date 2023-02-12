@@ -1,0 +1,245 @@
+---
+title: "MSDS660_Week7_Discussion_APeetz"
+output: pdf_document
+date: "2022-11-25"
+---
+
+Adam Peetz<br>
+
+MSDS660 Week 7 Discussion<br>
+
+Regis University <br>
+
+Dr. Siripun Sanguansintukul<br>
+
+December 1st 2022<br>
+
+# Logistic Regression for Diabetes
+
+#### Data:
+was acquired from here: https://www.kaggle.com/uciml/pima-indians-diabetes-database
+
+#### Objective:
+diagnostically predict whether or not a patient has diabetes, based on certain measurements included in the dataset. 
+
+```{r, warning=FALSE,message=FALSE,error=FALSE}
+#set working directory
+setwd("C:\\Users\\adamg\\Documents\\MSDS_660\\Week_7")
+
+#load libraries
+library(data.table)
+#suppressWarnings(expr)
+library(car)
+library(caTools)
+library(readr)
+library(caret)
+library(Hmisc)
+library(tidyverse)
+
+# load data 
+data <- read_csv("diabetes.csv",show_col_types = FALSE)
+# convert data to table
+df <-as.data.table(data)
+```
+
+```{r}
+# convert 0s and 99s to NAs
+# https://www.kaggle.com/code/dpintaric/diabetes-imputation-and-classification
+df$Glucose       <- ifelse(df$Glucose       ==  0, NA, df$Glucose)
+df$BloodPressure <- ifelse(df$BloodPressure ==  0, NA, df$BloodPressure)
+df$SkinThickness <- ifelse(df$SkinThickness ==  0, NA, df$SkinThickness)
+df$SkinThickness <- ifelse(df$SkinThickness == 99, NA, df$SkinThickness)
+df$Insulin       <- ifelse(df$Insulin       ==  0, NA, df$Insulin)
+df$BMI           <- ifelse(df$BMI           ==  0, NA, df$BMI)
+```
+
+```{r}
+#impute missing data
+df$imputed_Glucose <- impute(df$Glucose, median)
+df$imputed_BloodPressure <- impute(df$BloodPressure, median)
+df$imputed_SkinThickness <- impute(df$SkinThickness, median)
+df$imputed_Insulin <- impute(df$Insulin, median)
+df$imputed_BMI <- impute(df$BMI, median)
+```
+
+```{r}
+# subset dataframe
+df_1 <- df %>% dplyr::select(Pregnancies, imputed_Glucose, imputed_BloodPressure,                                                imputed_SkinThickness, imputed_Insulin, imputed_BMI,                                                DiabetesPedigreeFunction, Age, Outcome)   
+```
+
+# Train Test Split
+
+```{r}
+set.seed(1)
+# model diabetes ('type' column) based on other measurements
+samp <- sample.split(df_1$Outcome, SplitRatio = 0.8)
+train <- subset(df_1, samp == TRUE)
+test <- subset(df_1, samp == FALSE)
+```
+
+# Model #1, Using All Available Data:
+
+```{r}
+# Create a multi linear binomial logistic regression on verified_income vs a subset of variables
+model <- glm(Outcome ~ ., data = train, family = "binomial")
+
+# Look at the model summary
+summary(model)
+
+# Check for collinearity
+vif(model)
+```
+
+# Feature Selection by Stepwise AIC
+
+```{r}
+library(MASS)
+
+# Perform stepAIC and remove variables with high p-values
+stepAIC(model, direction = 'both')
+```
+
+# Model2: Features Selected by Stepwise AIC
+
+```{r}
+# Update model based on the stepAIC
+model2 <-  glm(formula = Outcome ~ Pregnancies + imputed_Glucose + imputed_BMI + 
+    DiabetesPedigreeFunction, family = "binomial", data = train)
+```
+
+# Confusion Matrix for Predictions on Training
+
+```{r}
+
+#Make a Prediction
+trainpreds <- predict(model2, type = 'response', train)
+
+
+# Round prediction values at 0.5 cutoff factor and change labels
+trainp <- factor(trainpreds >= 0.5,labels = c('0', '1'))
+
+# Buld a confustion matrix to see results
+trainCM <- confusionMatrix(trainp, as.factor(train$Outcome))
+trainCM
+```
+
+# Confusion Matrix for Predictions on Test
+
+```{r}
+# predict on the test data            
+testpreds <- predict(model2, type = 'response', test)
+
+# Round prediction values at 0.5 cutoff factor and change labels
+testp <- factor(testpreds >= 0.5, labels = c('0', '1'))
+
+# Build a confusion matrix to see results
+testCM <- confusionMatrix(testp, as.factor(test$Outcome))
+testCM
+```
+
+# ROC Curve and Threshold
+
+```{r, warning=FALSE}
+#Create a Roc curve and plot results for the prediction-based data
+library(pROC)
+
+# Create a Roc curve and results for the Train data
+train_roc_curve <- roc(train$Outcome, trainpreds)
+train_roc_curve
+plot(train_roc_curve)
+train_rocc <- coords(roc=train_roc_curve, x = 'best', best.method = 'closest.topleft')
+train_rocc
+
+# Create a Roc curve and results for the Test data
+test_roc_curve <- roc(test$Outcome, testpreds)
+test_roc_curve
+plot(test_roc_curve)
+
+#set the threshold
+thresh <- coords(roc=test_roc_curve, x = 'best', best.method = 'closest.topleft', transpose=TRUE)
+
+#look at what the best threshold is
+thresh
+```
+
+# Modifying Predictions with a Fine-tuned Threshold
+
+```{r}
+#round prediction
+rounded_preds <- as.factor(as.integer(testpreds > thresh[1]))
+targets <- as.factor(as.integer(test$Outcome))
+
+library(caret)
+# prepare data for confusion matrix
+postResample(pred = rounded_preds, obs = targets)
+
+# Accuracy needs to be higher than No Information Rate (guesses)
+confusionMatrix(rounded_preds, targets)
+```
+
+# Glucose's effect on Diabetes
+
+```{r, warning=FALSE, message=FALSE, error=FALSE}
+#Finally, predict the probability of a range of glucose values on the potential of having diabetes
+model_ir <- glm(Outcome ~ imputed_Glucose, data = df_1, family = "binomial")
+hist(df_1$imputed_Glucose)
+x <- data.table(imputed_Glucose=c(0:200))
+predictions <- predict(model_ir,newdata=x, type='response') # Create predictions using the fitted model for plotting
+x$probability<-predictions # Add predictions to datatable for plotting
+
+#Visualize the predictions
+ggplot(df_1) +
+  aes(x=imputed_Glucose, y=Outcome) +
+  geom_point() +
+  theme_bw() + 
+  theme(panel.border = element_blank(), 
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(), 
+        axis.line = element_line(colour = "black"))+
+  geom_line(data=x, aes(x=imputed_Glucose, y=probability), color='blue') +
+  labs(title='Diabetes by Glucose', x='Glucose', y='Diabetes') # Scatter verification status by interest rate using ggplot2
+```
+
+# Glucose vs Glucose
+
+```{r, warning=FALSE, message=FALSE, error=FALSE}
+library(ggpubr)
+#install.packages("viridis")  
+library("viridis")
+# check normality of distributions
+ggboxplot(df_1, x = "Outcome", y='imputed_Glucose', fill='Outcome',
+          main = "Glucose vs Outcome",
+          xlab = "Outcome",
+          ylab = "Glucose") + 
+          theme(legend.position="right")+
+          scale_fill_viridis(discrete = TRUE, alpha=0.8, begin =0.34, end=0.65, option="E") 
+
+```
+
+# Conclude with a summary of what you did and your results.
+
+## Missing Values
+
+The dataset is full of missing values, represented by 0's. These missing values are converted to NA and then filled with the median value for each column in the dataset. <br>
+
+## VIF
+
+A VIF check shows all features with VIF values between 1 and 2. There are no multicollinearity issues in the dataset. 
+
+## StepwiseAIC 
+
+StepwiseAIC is performed to select an ideal feature set for the model. Stepwise AIC suggests the ideal combination of features is Pregnancies + imputed_Glucose + imputed_BMI + DiabetesPedigreeFunction. 
+
+## Performance of Model w/o Threshold Tuning
+
+The stepwise model has an accuracy rate of 77% compared to a 64% null information rate. 
+
+## Performance of model w/ Threshold Tuning
+
+The performance of the model changes once the threshold is adjusted. An accuracy of 79% is achieved by the model after setting the threshold to 0.3.
+
+## Glucose Effect on Outcome
+
+Higher glucose levels correspond to an increased risk of diabetes. Almost all rows containing glucose over 150 have a positive outcome. Plotting glucose for each outcome shows two distinct distributions for each group. Additional research should be done to test if the difference in means between the two groups is significant.
+
+
